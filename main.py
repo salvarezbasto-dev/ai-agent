@@ -32,7 +32,6 @@ response = client.models.generate_content(
 if response.usage_metadata is None:
     raise RuntimeError("Cannot run request. Metadata is None")
 
-# This is the last thing you revised and it is buggy.
 if args.verbose:
     print(f"User prompt: {args.user_prompt}\nPrompt tokens: {response.usage_metadata.prompt_token_count}\nResponse tokens: {response.usage_metadata.candidates_token_count}\nResponse: {response.text}")
 else:
