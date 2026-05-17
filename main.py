@@ -22,54 +22,69 @@ def main():
     client = genai.Client(api_key=api_key) #Setting gen AI and messages
     messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
     if args.verbose:
-        print(f"User prompt: {args.user_prompt}\n") #Prompt tokens: {response.usage_metadata.prompt_token_count}\nResponse tokens: {response.usage_metadata.candidates_token_count}\nResponse: {response.text}")
-   # else:
-       # print(f"Response: {response.text}")
+        print(f"User prompt: {args.user_prompt}\n")
     
     generate_content(client, messages, args.verbose)
 
 # --- Set responses
 def generate_content(client, messages, verbose):
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=messages,
-        config=types.GenerateContentConfig(
-            tools=[available_functions],
-            system_instruction=system_prompt,
-            temperature=0)
-    ) # Generate responses to user prompts, set system prompt, and list of functions for LLM.
+    final_response_found = False
+    for i in range(20):
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=messages,
+            config=types.GenerateContentConfig(
+                tools=[available_functions],
+                system_instruction=system_prompt,
+                temperature=0
+                )
+        ) # Generate responses to user prompts, set system prompt, and list of functions for LLM.
 
-    if response.usage_metadata is None:
-        raise RuntimeError("Cannot run request. Metadata is None")
+        if response.candidates is not None: 
+            for candidate in response.candidates:
+                messages.append(candidate.content)
 
-    if verbose: #Print tokens if '--verbose' flag is used
-        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        if response.usage_metadata is None:
+            raise RuntimeError("Cannot run request. Metadata is None")
 
-    if response.function_calls is not None: 
-        print(f"Response: {response.text}")
-        function_results = []
+        if verbose: #Print tokens if '--verbose' flag is used
+            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
-        for function_call in response.function_calls: 
-            function_call_results = call_function(function_call, verbose)
+        if response.function_calls is not None: 
+            function_results = []
 
-            #Checking for errors below
-            if not function_call_results.parts:
-                raise RuntimeError("call_function returned no parts")
-            
-            first_part = function_call_results.parts[0]
-            if first_part.function_response is None:
-                raise RuntimeError("Expected function_response on first part")
-            
-            function_response = first_part.function_response.response
-            if function_response is None:
-                raise RuntimeError("Expected response in function_response")
-            
-            #Adding response to list now that we know there are no errors
-            function_results.append(first_part)
+            for function_call in response.function_calls: 
+                function_call_results = call_function(function_call, verbose)
 
-            if verbose:
-                print(f"-> {function_response}")
+                #Checking for errors below
+                if not function_call_results.parts:
+                    raise RuntimeError("call_function returned no parts")
+                
+                first_part = function_call_results.parts[0]
+                if first_part.function_response is None:
+                    raise RuntimeError("Expected function_response on first part")
+                
+                function_response = first_part.function_response.response
+                if function_response is None:
+                    raise RuntimeError("Expected response in function_response")
+                
+                #Adding response to lists now that we know there are no errors
+                function_results.append(first_part)
+
+                if verbose:
+                    print(f"-> {function_response}")
+
+            messages.append(types.Content(role="user", parts=function_results)) #Appending results of funcion calls to 'messages' list
+        
+        else:
+            print(f"Final response: {response.text}") #Final response after no more function calls
+            final_response_found = True #Setting a flag to True when a final response was produced
+            break
+    
+    if not final_response_found:
+        print("Error: Agent exceeded maximum iterations without producing a final response")
+        exit(1)
 
 if __name__ == "__main__":
     main()
